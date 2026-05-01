@@ -25,229 +25,181 @@
 
 ---
 
-## Why Memori for OpenClaw?
+# Memori for OpenClaw
 
-OpenClaw ships with a simple file-first memory system designed for lightweight experimentation. As deployments scale into production environments, teams often run into memory problems that need more structured, deterministic infrastructure.
+Memori gives OpenClaw agents a structured, long-term memory system. It automatically captures what happens and lets agents recall it on demand — so context survives across sessions without bloating the prompt.
 
-Memori provides a drop-in memory layer purpose-built for agentic systems running OpenClaw in production. It works through OpenClaw's plugin lifecycle, so you get persistent, structured memory without changing your agent logic.
+Instead of relying solely on natural-language memory, Memori structures persistent memory from both conversation and agent trace — the agent's actions, tool results, decisions, and outcomes — so it can recall what actually happened when it matters.
 
-## Common Challenges with Default OpenClaw Memory
+---
 
-### 1. Fact conflicts in long-running agents
+## The problem
 
-OpenClaw stores memory as plain markdown files. When facts change or contradict over time, there is no deterministic conflict resolution or lifecycle management.
+OpenClaw's default memory works for simple use cases, but breaks at scale:
 
-Memori introduces structured memory with update logic, decay policies, and deterministic fact handling.
+- Memory is stored as flat markdown files
+- Context is lost due to compaction
+- Important decisions and constraints disappear
+- No relationships between facts
+- Memory bleeds across users and projects
 
-### 2. Context loss from token limits
+---
 
-As sessions grow, context must be compacted to fit within model token limits. Important details can be dropped during compression.
+## What Memori changes
 
-Memori stores memory outside the prompt and retrieves the right facts at query time, eliminating compaction loss.
+Memori replaces flat memory with structured, scoped memory built from:
 
-### 3. No relationship reasoning
+- Agent execution (tool calls, results, decisions, outcomes)
 
-OpenClaw retrieves semantically similar text but does not model relationships between entities.
+Instead of replaying history, agents retrieve exactly what they need.
 
-Memori builds structured memory graphs that let agents reason across linked facts, not just retrieve similar chunks.
+---
 
-### 4. Cross-project noise
+## How it works
 
-When multiple projects share memory storage, irrelevant context can bleed across workflows.
+Memori runs on two parallel systems:
 
-Memori supports scoped memory namespaces to isolate projects and workflows.
+### 1. Advanced augmentation
 
-### 5. No user-level isolation
+After each interaction, Memori converts raw session data into structured, reusable memories asynchronously.
 
-Default memory systems do not provide deterministic isolation across users.
+- Transforms raw agent sessions into structured memory units
+- Captures the agent's actions, reasoning, tool usage, responses, corrections, and failures
+- Organizes into classes to enable efficient retrieval
+- Generates embeddings for semantic retrieval
+- Updates structured memory and the knowledge graph
 
-Memori enforces user-scoped memory boundaries for secure multi-user deployments.
+This is how structured memory is continuously built and updated over time.
 
-## What Changes When You Add Memori?
+It runs **after the agent responds** and does not impact latency.
 
-The Memori plugin replaces OpenClaw's flat-file memory workflow with managed, structured memory that is scoped by `entity_id`, `process_id`, and `session_id` and enriched automatically through OpenClaw's existing hooks.
+---
 
-| Capability                         | What changes                                                                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Structured memory storage**      | Instead of raw markdown blobs, Memori stores conversations, facts, preferences, and knowledge-graph triples as structured records tied to an entity, process, and session. Facts are extracted as subject-predicate-object relationships, deduplicated over time, and connected into a graph so related memories stay queryable instead of being buried in text files. |
-| **Advanced Augmentation**          | After each conversation, Memori processes the user and assistant exchange asynchronously in the background, identifies facts, preferences, skills, and attributes, generates embeddings for semantic search, and updates the knowledge graph without blocking the agent's response path.                                                                               |
-| **Intelligent Recall**             | Before the agent responds, Memori searches the current entity's stored facts and knowledge graph, ranks memories by semantic relevance and importance, and injects the most useful context into the prompt so durable knowledge survives context-window compression.                                                                                                   |
-| **Production-ready observability** | Memori Cloud gives you dashboard visibility into memory creation, recalls, cache hit rate, sessions, quota usage, top subjects, per-memory retrieval metrics, and knowledge-graph relationships, so you can inspect what was stored and how recall is behaving in production.                                                                                          |
+### 2. Agent-controlled recall
 
-The plugin still remains drop-in: OpenClaw handles the agent loop, while Memori adds recall, augmentation, sanitization, and observability around it.
+Recall is **explicit and initiated by the agent**.
+
+Memori separates memory creation from memory recall:
+
+- Creation is automatic (advanced augmentation)
+- Recall is intentional (agent-controlled)
+
+Agents decide:
+
+- When to recall
+- What scope to recall from
+- How much history to include
+
+Memori does not automatically inject memory into the prompt. The agent retrieves only the context it needs, keeping token usage efficient.
+
+Available tools:
+
+- **`memori_recall`** — query structured memory for facts, constraints, decisions, and patterns
+- **`memori_recall_summary`** — retrieve summaries and the daily brief
+- **`memori_feedback`** — report on memory quality to improve the system
+
+---
 
 ## Quickstart
-
-Get persistent memory running in your OpenClaw gateway in three steps.
 
 ### Prerequisites
 
 - [OpenClaw](https://openclaw.ai) `v2026.3.2` or later
 - A Memori API key from [app.memorilabs.ai](https://app.memorilabs.ai)
-- An Entity ID to attribute memories to, such as a user ID, tenant ID, or agent name
-- A Project ID to scope memories to a specific project or workspace
+- An Entity ID to scope memory to a specific user, agent, or system
+- A Project ID to scope memory to a specific project or workspace
 
-### 1. Install and Enable
+### 1. Install
 
 ```bash
-# Install the plugin from npm
 openclaw plugins install @memorilabs/openclaw-memori
-
-# Enable it in your workspace
 openclaw plugins enable openclaw-memori
 ```
 
 ### 2. Configure
 
-The plugin requires an API key, an Entity ID, and a Project ID. Use the built-in `memori` CLI to configure it in one step.
-
-#### Option A: Memori CLI (Recommended)
-
 ```bash
 openclaw memori init \
   --api-key "YOUR_MEMORI_API_KEY" \
-  --entity-id "your-entity-id" \
-  --project-id "your-project-id"
+  --entity-id "your-app-user-id" \
+  --project-id "my-project"
 ```
-
-Then restart the gateway:
-
-```bash
-openclaw gateway restart
-```
-
-#### Option B: OpenClaw config set
-
-```bash
-openclaw config set plugins.entries.openclaw-memori.config.apiKey "YOUR_MEMORI_API_KEY"
-openclaw config set plugins.entries.openclaw-memori.config.entityId "your-entity-id"
-openclaw config set plugins.entries.openclaw-memori.config.projectId "your-project-id"
-openclaw gateway restart
-```
-
-#### Option C: Direct JSON (`~/.openclaw/openclaw.json`)
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "openclaw-memori": {
-        "enabled": true,
-        "config": {
-          "apiKey": "your-memori-api-key",
-          "entityId": "your-entity-id",
-          "projectId": "your-project-id"
-        }
-      }
-    }
-  }
-}
-```
-
-### Configuration Options
-
-| Option      | Type     | Required | Description                                                                                         |
-| ----------- | -------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `apiKey`    | `string` | **Yes**  | Your Memori API key from [app.memorilabs.ai](https://app.memorilabs.ai).                            |
-| `entityId`  | `string` | **Yes**  | The unique identifier for the entity (e.g., user, agent, or tenant) to attribute these memories to. |
-| `projectId` | `string` | **Yes**  | Scopes all memories to a specific project or workspace.                                             |
 
 ### 3. Verify
 
-Check that the plugin is configured and can reach the API:
-
 ```bash
+openclaw gateway restart
 openclaw memori status --check
 ```
 
-You should see:
+Expected:
 
-```text
-Memori Plugin Status
-────────────────────────────────────
-  API Key:    ****...A3xQ
-  Entity ID:  your-entity-id
-  Project ID: your-project-id
-
-Checking API connectivity... OK
+```
 Status: Ready
 ```
 
-You can also inspect gateway logs to confirm the plugin loaded:
+### 4. Test the memory loop
 
-```bash
-openclaw gateway logs --filter "[Memori]"
-```
+1. Tell the agent something durable:
 
-```text
-[Memori] === INITIALIZING PLUGIN ===
-[Memori] Tracking Entity ID: your-entity-id
-```
+   > "I always use TypeScript and prefer functional patterns."
 
-To test the full memory loop:
+2. Start a new session and ask:
 
-1. Send a message with a durable preference:
-   `I always use TypeScript and prefer functional patterns.`
-2. Confirm augmentation ran:
-   `Augmentation successful!`
-3. Start a new session and ask:
-   `Write a hello world script.`
-4. Confirm recall ran:
-   `Successfully injected memory context.`
+   > "Write a hello world script in my preferred language."
+
+3. Confirm the agent used `memori_recall` to fetch your preferences:
+   ```
+   [Memori] memori_recall params: {"projectId":"my-project","query":"preferred programming language"}
+   ```
+
+If it works, you now have persistent memory across sessions.
 
 ---
 
-## CLI Reference
+## Memory model
 
-The plugin registers a `memori` command group in the OpenClaw CLI.
+Memory is scoped to prevent noise and ensure relevance:
 
-### `openclaw memori init`
+- `entity_id` → user, agent, or system context
+- `project_id` → project or workspace context
+- `session_id` → specific session (requires `project_id`)
+- `date_start` / `date_end` → time-bounded recall (defaults to all-time if omitted)
+- `source` → type of memory (recall only)
+- `signal` → how the memory was derived (recall only)
 
-Configure the plugin with your credentials. All three flags are required.
+All timestamps are stored in **UTC**.
 
-```bash
-openclaw memori init \
-  --api-key <key> \
-  --entity-id <id> \
-  --project-id <id>
-```
+---
 
-### `openclaw memori status`
+## Agent behavior (read this)
 
-Show the current configuration and whether the plugin is ready to run. Add `--check` to test live API connectivity.
+Agents should:
 
-```bash
-openclaw memori status
-openclaw memori status --check
-```
+- Retrieve a summary at the start of meaningful sessions
+- Use targeted recall (not broad queries)
+- Avoid recalling on every turn
+- Use memory only when context is needed
+- Send feedback when memory is missing or incorrect
 
-### `openclaw memori config`
+See SKILL.md for full behavior guidelines.
 
-Fine-grained configuration management.
+---
 
-```bash
-# Show all current values
-openclaw memori config show
+## Typical workflow
 
-# Get a single value (API key is masked)
-openclaw memori config get api-key
-openclaw memori config get entity-id
-openclaw memori config get project-id
+1. Start session → retrieve summary
+2. During task → targeted recall
+3. Missing context → send feedback
+4. End of session → memory is captured automatically
 
-# Set a single value
-openclaw memori config set api-key "NEW_KEY"
-openclaw memori config set entity-id "new-entity"
-openclaw memori config set project-id "new-project"
-```
+---
 
-Valid keys: `api-key`, `entity-id`, `project-id`.
+## Multi-agent ready
 
-## How It Works
+The plugin is fully stateless and thread-safe. You can run it across multiple agents in the same gateway without shared state or concurrency issues.
 
-This plugin integrates with OpenClaw's event lifecycle to provide persistent memory without interfering with the agent's core logic:
-
-1. **`before_prompt_build` (Intelligent Recall):** When a user sends a message, the plugin intercepts the event, queries the Memori API, and safely prepends relevant memories to the agent's system context.
-2. **`agent_end` (Advanced Augmentation):** Once the agent finishes generating its response, the plugin captures the final `user` and `assistant` messages, sanitizes them, and sends them to the Memori integration endpoint for long-term storage and entity mapping.
+---
 
 ## Contributing
 
