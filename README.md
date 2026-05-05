@@ -169,6 +169,23 @@ openclaw gateway restart
 
 For setup and configuration, see the [OpenClaw Quickstart](docs/memori-cloud/openclaw/quickstart.mdx). For architecture and lifecycle details, see the [OpenClaw Overview](docs/memori-cloud/openclaw/overview.mdx).
 
+## Hermes Agent (Persistent Memory Provider)
+
+Memori also ships as a Hermes Agent memory provider. It captures completed conversations in the background and gives Hermes explicit `memori_recall` and `memori_recall_summary` tools for agent-controlled recall.
+
+```bash
+pip install hermes-memori
+
+hermes config set memory.provider memori
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+mkdir -p "$HERMES_HOME"
+echo "MEMORI_API_KEY=YOUR_MEMORI_API_KEY" >> "$HERMES_HOME/.env"
+echo "MEMORI_ENTITY_ID=your-app-user-id" >> "$HERMES_HOME/.env"
+echo "MEMORI_PROJECT_ID=hermes" >> "$HERMES_HOME/.env"
+```
+
+For setup and configuration, see the [Hermes Quickstart](docs/memori-cloud/hermes/quickstart.mdx). For architecture and lifecycle details, see the [Hermes Overview](docs/memori-cloud/hermes/overview.mdx).
+
 ## MCP (Connect Your Agent in One Command)
 
 Your agent forgets everything between sessions. Memori fixes that. It remembers your stack, your conventions, and how you like things done so you stop repeating yourself.
